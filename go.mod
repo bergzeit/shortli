@@ -1,3 +1,3 @@
-module github.com/DeSte96/shortli
+module github.com/bergzeit/shortli
 
 go 1.23.0
