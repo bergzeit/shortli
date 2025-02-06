@@ -1,59 +1,133 @@
 package main
 
 import (
+	"crypto/rand"
+	"database/sql"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
-	"time"
+	"text/template"
 
-	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
 )
+
+type PageData struct {
+	OriginalURL string
+	ShortURL    string
+}
+
+var urls = make(map[string]string)
 
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", urlShortHandler)
 
+	db, err := sql.Open("sqlite3", "shortli.db")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	allData, err := FindAll(db)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println(allData)
+
 	log.Print("starting server on :8080")
-	err := http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServe(":8080", mux)
 	log.Fatal(err)
 }
 
-// urlShort shortens a original URL.
+// urlShortHanlder shortens a original URL.
 func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 
-	var (
-		urlMap      = make(map[string]uuid.UUID) // URL -> UUID
-		shortUrlMap = make(map[uuid.UUID]string) // UUID -> ShortURL
-	)
+	// Check if the request method is POST.
+	// If true, extract the "url" value from the form data.
+	if r.Method == http.MethodPost {
+		originalURL := r.FormValue("url")
+		// Error-Handling.
+		if originalURL == "" {
+			http.Error(w, "Error (empty url is not valid)", http.StatusBadRequest)
+			return
+		}
 
-	uu := uuid.New()                 // generate UUID number
-	url := "https://google.com/test" // test url
-	shortUrl := generateShortKey()   // a unique shortlink
+		shortUrl := generateShortKey() // generate the short url
+		urls[shortUrl] = originalURL   // fill up the map
 
-	urlMap[url] = uu
-	shortUrlMap[uu] = shortUrl
+		db, err := sql.Open("sqlite3", "shortli.db")
+		if err != nil {
+			fmt.Println(err)
+		}
+		// instert the both urls in the database.db
+		insertData(db, originalURL, shortUrl)
 
-	mapOne := fmt.Sprintf("\n\nurlMap:", urlMap)         // only for test and visualize
-	mapTwo := fmt.Sprintf("\nshortUrlMap:", shortUrlMap) // only for test and visualize
-	answer := fmt.Sprintf("Original Link: %s\nShort Link: %s", url, shortUrl)
-	w.Write([]byte(answer))
-	w.Write([]byte(mapOne)) // only for test and visualize
-	w.Write([]byte(mapTwo)) // only for test and visualize
+		// Data will show on the interface.
+		data := PageData{
+			OriginalURL: fmt.Sprintf("Ganzer Link: %s", originalURL),
+			ShortURL:    fmt.Sprintf("Verkürzter Link: %s", shortUrl),
+		}
 
+		// Writing the output to the HTTP response.
+		tmpl := template.Must(template.ParseFiles("templates/index.html"))
+		tmpl.Execute(w, data)
+		return
+
+	}
+
+	// Execute the template with no data and write the output to the HTTP response.
+	tmpl := template.Must(template.ParseFiles("templates/index.html"))
+	tmpl.Execute(w, nil)
 }
 
 // generateShortKey generates and returns a random key with 7 chars.
 func generateShortKey() string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	const keyLength = 7
+	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	b := make([]byte, keyLength)
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	shortKey := make([]byte, keyLength)
-	for i := range shortKey {
-		shortKey[i] = charset[r.Intn(len(charset))]
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(err)
 	}
-	shortUrl := "bg/" + string(shortKey)
-	return string(shortUrl)
+
+	for i := range b {
+		b[i] = letters[int(b[i])%len(letters)]
+	}
+	return "bg/" + string(b)
+}
+
+// FindAll looks for all data in the shortli.db database and returns it in a slice.
+func FindAll(db *sql.DB) ([]PageData, error) {
+	sql := `SELECT * FROM links`
+
+	rows, err := db.Query(sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var links []PageData
+	for rows.Next() {
+		c := &PageData{}
+		err := rows.Scan(&c.OriginalURL, &c.ShortURL)
+		if err != nil {
+			return nil, err
+		}
+		links = append(links, *c)
+	}
+	return links, nil
+}
+
+func insertData(db *sql.DB, longlink string, shortlink string) {
+	insertLinks := `INSERT INTO links(longlink, shortlink) VALUES (?,?)`
+	statement, err := db.Prepare(insertLinks)
+
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+	_, err = statement.Exec(longlink, shortlink)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
 }

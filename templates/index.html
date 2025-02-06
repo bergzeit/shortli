@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shortli</title>
+</head>
+<body>
+    <h1>Generate a short URL!</h1>
+     <!-- Form for the input -->
+    <form method="POST">
+        <input type="url" name="url" placeholder="https://example.com" required>
+        <button type="submit">Kürzen</button>
+    </form>
+    <p>{{.OriginalURL}}</p>
+    <p>{{.ShortURL}}</p>
+
+</body>
+</html>
