@@ -22,20 +22,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", urlShortHandler)
 
-	db, err := sql.Open("sqlite3", "shortli.db")
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	allData, err := FindAll(db)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	fmt.Println(allData)
-
 	log.Print("starting server on :8080")
-	err = http.ListenAndServe(":8080", mux)
+	err := http.ListenAndServe(":8080", mux)
 	log.Fatal(err)
 }
 
@@ -46,8 +34,8 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 	// If true, extract the "url" value from the form data.
 	if r.Method == http.MethodPost {
 		originalURL := r.FormValue("url")
-		// Error-Handling.
-		if originalURL == "" {
+
+		if originalURL == "" { // Error-Handling.
 			http.Error(w, "Error (empty url is not valid)", http.StatusBadRequest)
 			return
 		}
@@ -72,12 +60,35 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 		tmpl := template.Must(template.ParseFiles("templates/index.html"))
 		tmpl.Execute(w, data)
 		return
-
 	}
 
+	if r.Method == http.MethodGet {
+		ShortUrlInput := r.FormValue("shortUrl")
+
+		db, err := sql.Open("sqlite3", "shortli.db")
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		allData, _ := findAll(db)
+		for _, v := range allData {
+			if v.ShortURL == ShortUrlInput {
+
+				data := PageData{
+					ShortURL:    fmt.Sprintf("Verkürzter Link: %s", v.ShortURL),
+					OriginalURL: fmt.Sprintf("Originaler Link: %s", v.OriginalURL),
+				}
+				// Writing the output to the HTTP response.
+				tmpl := template.Must(template.ParseFiles("templates/index.html"))
+				tmpl.Execute(w, data)
+				return
+			}
+		}
+	}
 	// Execute the template with no data and write the output to the HTTP response.
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
 	tmpl.Execute(w, nil)
+
 }
 
 // generateShortKey generates and returns a random key with 7 chars.
@@ -94,11 +105,11 @@ func generateShortKey() string {
 	for i := range b {
 		b[i] = letters[int(b[i])%len(letters)]
 	}
-	return "bg/" + string(b)
+	return string(b)
 }
 
 // FindAll looks for all data in the shortli.db database and returns it in a slice.
-func FindAll(db *sql.DB) ([]PageData, error) {
+func findAll(db *sql.DB) ([]PageData, error) {
 	sql := `SELECT * FROM links`
 
 	rows, err := db.Query(sql)
@@ -119,6 +130,7 @@ func FindAll(db *sql.DB) ([]PageData, error) {
 	return links, nil
 }
 
+// instertData saves the longlink and shortlink in sql database.
 func insertData(db *sql.DB, longlink string, shortlink string) {
 	insertLinks := `INSERT INTO links(longlink, shortlink) VALUES (?,?)`
 	statement, err := db.Prepare(insertLinks)
