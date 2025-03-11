@@ -36,7 +36,7 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 		originalURL := r.FormValue("url")
 
 		if originalURL == "" { // Error-Handling.
-			http.Error(w, "Error (empty url is not valid)", http.StatusBadRequest)
+			http.Error(w, "Error (empty url is not valid)", http.StatusBadRequest) //ändern
 			return
 		}
 
@@ -44,20 +44,20 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 		urls[shortUrl] = originalURL   // fill up the map
 
 		db, err := sql.Open("sqlite3", "shortli.db")
-		if err != nil {
-			fmt.Println(err)
+		if err != nil { //ändern
+			fmt.Println(err) // return (Datenbank nicht verfügbar)
 		}
-		// instert the both urls in the database.db
-		insertData(db, originalURL, shortUrl)
+		// instert the both urls in the database (shortli.db)
+		insertData(db, originalURL, shortUrl) // error template
 
 		// Data will show on the interface.
 		data := PageData{
-			OriginalURL: fmt.Sprintf("Ganzer Link: %s", originalURL),
-			ShortURL:    fmt.Sprintf("Verkürzter Link: %s", shortUrl),
+			OriginalURL: originalURL,
+			ShortURL:    shortUrl,
 		}
 
 		// Writing the output to the HTTP response.
-		tmpl := template.Must(template.ParseFiles("templates/index.html"))
+		tmpl := template.Must(template.ParseFiles("templates/index.html")) //..
 		tmpl.Execute(w, data)
 		return
 	}
@@ -75,8 +75,8 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 			if v.ShortURL == ShortUrlInput {
 
 				data := PageData{
-					ShortURL:    fmt.Sprintf("Verkürzter Link: %s", v.ShortURL),
-					OriginalURL: fmt.Sprintf("Originaler Link: %s", v.OriginalURL),
+					OriginalURL: v.OriginalURL,
+					ShortURL:    v.ShortURL,
 				}
 				// Writing the output to the HTTP response.
 				tmpl := template.Must(template.ParseFiles("templates/index.html"))
@@ -109,7 +109,7 @@ func generateShortKey() string {
 }
 
 // FindAll looks for all data in the shortli.db database and returns it in a slice.
-func findAll(db *sql.DB) ([]PageData, error) {
+func findAll(db *sql.DB) ([]PageData, error) { // Where (SQL)
 	sql := `SELECT * FROM links`
 
 	rows, err := db.Query(sql)
@@ -135,7 +135,7 @@ func insertData(db *sql.DB, longlink string, shortlink string) {
 	insertLinks := `INSERT INTO links(longlink, shortlink) VALUES (?,?)`
 	statement, err := db.Prepare(insertLinks)
 
-	if err != nil {
+	if err != nil { // ändern error return
 		log.Fatalln(err.Error())
 	}
 	_, err = statement.Exec(longlink, shortlink)
