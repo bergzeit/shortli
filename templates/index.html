@@ -1,25 +1,30 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shortli</title>
-</head>
-
-<body>
+  </head>
+  
+  <body>
     <h1 style="background-color:rgba(222, 136, 30, 0.36);">Generate a short URL!</h1>
      <!-- Form for the input -->
     <form method="POST">
         <input type="url" name="url" placeholder="https://example.com" required>
         <button type="submit">Kurzen Link erstellen</button>
     </form>
-    <form mehtod="GET">
+    <form method="GET">
         <input type="text" name="shortUrl" placeholder="shortlink einfügen" required>
         <button type="submit">Originalen Link anzeigen</button>
     </form>
 
+    {{if .Error}}
+     <p>Fehlermeldung: {{.Error}}</p>
+
+    {{else}}
     <p><a href= '{{.OriginalURL}}' >{{.OriginalURL}}</a></p>
     <p><a href= '{{.OriginalURL}}' >{{.ShortURL}}</a></p>
+    {{end}}
 
-</body>
+  </body>
 </html>
