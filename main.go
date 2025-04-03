@@ -20,16 +20,19 @@ var urls = make(map[string]string)
 
 func main() {
 	mux := http.NewServeMux()
+	mux.Handle("/styles/", http.StripPrefix("/styles/", http.FileServer(http.Dir("styles"))))
+	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("images"))))
 	mux.HandleFunc("/", urlShortHandler)
 
-	log.Print("starting server on :8080")
-	err := http.ListenAndServe(":8080", mux)
-	log.Fatal(err)
+	log.Print("starting server on :8080")    // print on console.
+	err := http.ListenAndServe(":8080", mux) // error handling.
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 // urlShortHanlder shortens a original URL.
 func urlShortHandler(w http.ResponseWriter, r *http.Request) {
-
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
 
 	// Check if the request method is POST.
