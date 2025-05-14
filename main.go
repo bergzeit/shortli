@@ -3,26 +3,25 @@ package main
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
-	"text/template"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type PageData struct {
-	OriginalURL string
-	ShortURL    string
-	Error       error
+	OriginalURL string `json:"originalUrl"`
+	ShortURL    string `json:"shortUrl"`
+	Error       string `json:"error"`
 }
 
 var urls = make(map[string]string)
 
 func main() {
 	mux := http.NewServeMux()
-	mux.Handle("/styles/", http.StripPrefix("/styles/", http.FileServer(http.Dir("styles"))))
-	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("images"))))
 	mux.HandleFunc("/", urlShortHandler)
+	mux.HandleFunc("/create", createHandler)
 
 	log.Print("starting server on :8080")    // print on console.
 	err := http.ListenAndServe(":8080", mux) // error handling.
@@ -31,41 +30,18 @@ func main() {
 	}
 }
 
-// urlShortHanlder shortens a original URL.
+// CORS-Header to allow Cross-Origin-Requests with localhost:5173
+func enableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+// urlShortHanlder checks if a short link is already existing in the database
+// and send this original link back to the client.
 func urlShortHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("templates/index.html"))
 
-	// Check if the request method is POST.
-	// If true, extract the "url" value from the form data.
-	if r.Method == http.MethodPost {
-		originalURL := r.FormValue("url")
-
-		if originalURL == "" { // Error-Handling.
-			http.Error(w, "Error (empty url is not valid)", http.StatusBadRequest)
-			return
-		}
-
-		shortUrl := generateShortKey() // generate the short url
-		urls[shortUrl] = originalURL   // fill up the map
-
-		db, err := sql.Open("sqlite3", "shortli.db")
-		if err != nil {
-			tmpl.Execute(w, PageData{Error: err})
-			return
-		}
-		// instert the both urls in the database (shortli.db)
-		insertData(db, originalURL, shortUrl) // error template
-
-		// Data will show on the interface.
-		data := PageData{
-			OriginalURL: originalURL,
-			ShortURL:    shortUrl,
-		}
-
-		// Writing the output to the HTTP response.
-		tmpl.Execute(w, data)
-		return
-	}
+	enableCORS(w)
 
 	// Check if the request method is GET.
 	if r.Method == http.MethodGet {
@@ -73,15 +49,15 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 
 		db, err := sql.Open("sqlite3", "shortli.db")
 		if err != nil {
-			tmpl.Execute(w, PageData{Error: err})
+			http.Error(w, "Error (database)", http.StatusBadRequest)
 			return
 		}
 		defer db.Close()
 
 		if len(ShortUrlInput) != 0 {
-			answer, err := findOriginlaLink(db, ShortUrlInput)
+			answer, err := findOriginalLink(db, ShortUrlInput)
 			if err != nil {
-				tmpl.Execute(w, PageData{Error: err})
+				http.Error(w, "Error (can't find original link)", http.StatusBadRequest)
 				return
 			}
 
@@ -89,13 +65,74 @@ func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 				OriginalURL: answer,
 				ShortURL:    ShortUrlInput,
 			}
-			tmpl.Execute(w, data)
+
+			// Create a JSON data.
+			// Marhal-method encoding input in a JSON-encoded-string.
+			jsonStr, err := json.Marshal(data)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			w.Write(jsonStr)
+
 			return
 		}
 	}
+}
 
-	// Execute the template with no data and write the output to the HTTP response.
-	tmpl.Execute(w, nil)
+// createHanlder receives the original link (JSON) from client (POST-METHOD)
+// and create a new shortlink.
+func createHandler(w http.ResponseWriter, r *http.Request) {
+
+	enableCORS(w)
+
+	// MehtodOptions must be valid (Status: OK).
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Check if the request method is POST.
+	if r.Method != http.MethodPost {
+		http.Error(w, "only POST-METHOD is avaible", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var dataVue PageData
+	err := json.NewDecoder(r.Body).Decode(&dataVue)
+	if err != nil {
+		http.Error(w, "something went wrong with JSON", http.StatusBadRequest)
+		return
+	}
+
+	if dataVue.OriginalURL == "" { // Error-Handling.
+		http.Error(w, "Error (empty url is not valid)", http.StatusBadRequest)
+		return
+	}
+
+	shortUrl := generateShortKey()       // generate the short url
+	urls[shortUrl] = dataVue.OriginalURL // fill up the map
+
+	db, err := sql.Open("sqlite3", "shortli.db")
+	if err != nil {
+		http.Error(w, "Error (database)", http.StatusBadRequest)
+		return
+	}
+
+	// instert the both urls in the database (shortli.db)
+	insertData(db, dataVue.OriginalURL, shortUrl)
+
+	data := PageData{
+		OriginalURL: dataVue.OriginalURL,
+		ShortURL:    shortUrl,
+	}
+
+	// Create a JSON data.
+	// Marhal-method encoding input in a JSON-encoded-string.
+	jsonStr, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	w.Write(jsonStr)
 }
 
 // generateShortKey generates and returns a random key with 7 chars.
@@ -115,8 +152,8 @@ func generateShortKey() string {
 	return string(b)
 }
 
-// findOriginlaLink looks for the original Link in the .db database.
-func findOriginlaLink(db *sql.DB, shortlink string) (string, error) {
+// findOriginalLink looks for the original Link in the .db database.
+func findOriginalLink(db *sql.DB, shortlink string) (string, error) {
 	sql := `SELECT longlink FROM links WHERE shortlink = ?` // retrieve shortlink by longlink
 	row := db.QueryRow(sql, shortlink)                      // execute the SELECT statement
 	result := ""
@@ -130,8 +167,8 @@ func findOriginlaLink(db *sql.DB, shortlink string) (string, error) {
 
 // instertData saves the longlink and shortlink in sql database.
 func insertData(db *sql.DB, longlink string, shortlink string) error {
-	insertLinks := `INSERT INTO links(longlink, shortlink) VALUES (?,?)`
-	statement, err := db.Prepare(insertLinks) // Prepare SQL statement
+	insertLinks := `INSERT OR IGNORE INTO links(longlink, shortlink) VALUES (?, ?);` // ignore duplicates
+	statement, err := db.Prepare(insertLinks)                                        // Prepare SQL statement
 
 	if err != nil {
 		return err
