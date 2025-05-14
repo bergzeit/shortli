@@ -1,3 +1,5 @@
 module github.com/bergzeit/shortli
 
-go 1.23.0
+go 1.24
+
+require github.com/mattn/go-sqlite3 v1.14.24
