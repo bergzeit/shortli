@@ -2,12 +2,13 @@ package main
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/rs/cors"
 )
 
 type PageData struct {
@@ -19,71 +20,67 @@ type PageData struct {
 var urls = make(map[string]string)
 
 func main() {
+	if err := DbConnection("shortli.db"); err != nil { // Initialize (once) shortli.db database.
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer GetDB().CloseDB() // close DB at the end.
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", urlShortHandler)
 	mux.HandleFunc("/create", createHandler)
 
-	log.Print("starting server on :8080")    // print on console.
-	err := http.ListenAndServe(":8080", mux) // error handling.
+	corsOptions := cors.Options{
+		AllowedOrigins: []string{"http://localhost:5173"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Content-Type"},
+	}
+	handler := cors.New(corsOptions).Handler(mux) // Cors-Middleware
+
+	log.Print("starting server on :8080")        // print on console.
+	err := http.ListenAndServe(":8080", handler) // error handling.
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// CORS-Header to allow Cross-Origin-Requests with localhost:5173
-func enableCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
 // urlShortHanlder checks if a short link is already existing in the database
 // and send this original link back to the client.
 func urlShortHandler(w http.ResponseWriter, r *http.Request) {
 
-	enableCORS(w)
-
 	// Check if the request method is GET.
 	if r.Method == http.MethodGet {
-		ShortUrlInput := r.FormValue("shortUrl")
+		w.WriteHeader(http.StatusOK)
+	}
 
-		db, err := sql.Open("sqlite3", "shortli.db")
+	ShortUrlInput := r.FormValue("shortUrl")
+	db := GetDB()
+
+	if len(ShortUrlInput) != 0 {
+		answer, err := FindOriginalLink(db.DB, ShortUrlInput)
 		if err != nil {
-			http.Error(w, "Error (database)", http.StatusBadRequest)
+			http.Error(w, "Error (can't find original link)", http.StatusBadRequest)
 			return
 		}
-		defer db.Close()
 
-		if len(ShortUrlInput) != 0 {
-			answer, err := findOriginalLink(db, ShortUrlInput)
-			if err != nil {
-				http.Error(w, "Error (can't find original link)", http.StatusBadRequest)
-				return
-			}
-
-			data := PageData{
-				OriginalURL: answer,
-				ShortURL:    ShortUrlInput,
-			}
-
-			// Create a JSON data.
-			// Marhal-method encoding input in a JSON-encoded-string.
-			jsonStr, err := json.Marshal(data)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
-			w.Write(jsonStr)
-
-			return
+		data := PageData{
+			OriginalURL: answer,
+			ShortURL:    ShortUrlInput,
 		}
+
+		// Create a JSON data.
+		// Marhal-method encoding input in a JSON-encoded-string.
+		jsonStr, err := json.Marshal(data)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		w.Write(jsonStr)
 	}
 }
 
 // createHanlder receives the original link (JSON) from client (POST-METHOD)
 // and create a new shortlink.
 func createHandler(w http.ResponseWriter, r *http.Request) {
-
-	enableCORS(w)
 
 	// MehtodOptions must be valid (Status: OK).
 	if r.Method == http.MethodOptions {
@@ -97,9 +94,14 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var dataVue PageData
-	err := json.NewDecoder(r.Body).Decode(&dataVue)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		http.Error(w, "error while reading the file", http.StatusBadRequest)
+	}
+	defer r.Body.Close()
+
+	var dataVue PageData
+	if err := json.Unmarshal(body, &dataVue); err != nil {
 		http.Error(w, "something went wrong with JSON", http.StatusBadRequest)
 		return
 	}
@@ -112,14 +114,8 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 	shortUrl := generateShortKey()       // generate the short url
 	urls[shortUrl] = dataVue.OriginalURL // fill up the map
 
-	db, err := sql.Open("sqlite3", "shortli.db")
-	if err != nil {
-		http.Error(w, "Error (database)", http.StatusBadRequest)
-		return
-	}
-
-	// instert the both urls in the database (shortli.db)
-	insertData(db, dataVue.OriginalURL, shortUrl)
+	db := GetDB()
+	InsertData(db.DB, dataVue.OriginalURL, shortUrl)
 
 	data := PageData{
 		OriginalURL: dataVue.OriginalURL,
@@ -131,6 +127,7 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 	jsonStr, err := json.Marshal(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	w.Write(jsonStr)
 }
@@ -150,32 +147,4 @@ func generateShortKey() string {
 		b[i] = letters[int(b[i])%len(letters)]
 	}
 	return string(b)
-}
-
-// findOriginalLink looks for the original Link in the .db database.
-func findOriginalLink(db *sql.DB, shortlink string) (string, error) {
-	sql := `SELECT longlink FROM links WHERE shortlink = ?` // retrieve shortlink by longlink
-	row := db.QueryRow(sql, shortlink)                      // execute the SELECT statement
-	result := ""
-
-	err := row.Scan(&result)
-	if err != nil {
-		return "", err
-	}
-	return result, nil
-}
-
-// instertData saves the longlink and shortlink in sql database.
-func insertData(db *sql.DB, longlink string, shortlink string) error {
-	insertLinks := `INSERT OR IGNORE INTO links(longlink, shortlink) VALUES (?, ?);` // ignore duplicates
-	statement, err := db.Prepare(insertLinks)                                        // Prepare SQL statement
-
-	if err != nil {
-		return err
-	}
-	_, err = statement.Exec(longlink, shortlink)
-	if err != nil {
-		return err
-	}
-	return nil
 }
