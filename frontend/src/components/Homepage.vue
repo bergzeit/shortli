@@ -33,11 +33,13 @@ async function fetchOriginalLink() {
   const result = await fetchData(textInput.value);
   if (result) {
     answer.value = result.originalUrl;  // answer is now the original link as string
+    shortUrl.value = result.shortUrl;
   } else {
     answer.value = "Link existiert nicht."
+    shortUrl.value = "Shortlink existiert nicht."
   };
-  shortUrl.value = "";
-  longUrl.value = "";
+
+  resetInputField()
 }
 
 // handelSubmit sends given original link (JSON) to backend.
@@ -58,6 +60,13 @@ async function handleSubmit() {
   shortUrl.value = result.shortUrl;
   longUrl.value = data.originalUrl;
   answer.value = "";
+
+  resetInputField()
+}
+
+function resetInputField() {
+  textInputLong.value = ""
+  textInput.value = ""
 }
 </script>
 
@@ -83,12 +92,11 @@ async function handleSubmit() {
           Kurzen Link erstellen
         </button>
         <p v-if="longUrl">
-          Originaler Link: <a :href="`${longUrl}`"> {{ longUrl }}</a><br>
-          Verkürzter Link: <br> {{ shortUrl }}
+          Originaler Link: <br><a class="generatedLinks" :href="`${longUrl}`"> {{ longUrl }}</a><br>
+          Verkürzter Link: <br><a class="generatedLinks" :href="`${longUrl}`"> {{ shortUrl }}</a><br>
         </p>
       </form>
    
-
       <!--GET-METHOD-->
       <input 
         v-model="textInput" 
@@ -99,7 +107,8 @@ async function handleSubmit() {
         Originalen Link anzeigen
       </button>
       <p v-if="answer">
-        Originaler Link: <a :href="`${answer}`"> {{ answer }} </a>        
+        Originaler Link: <a class="generatedLinks" :href="`${answer}`"><br> {{ answer }} </a><br>
+        Verkürzter Link: <br><a class="generatedLinks" :href="`${answer}`"> {{ shortUrl }}</a><br>       
       </p>
 
     </div>
@@ -138,6 +147,10 @@ async function handleSubmit() {
   input {
     height: 30px;
     width: 300px;
+  }
+  .generatedLinks{
+    font-weight: bold;
+    color: cornsilk
   }
   a,
   p {

@@ -1,34 +1,35 @@
 package main
 
-import "database/sql"
+import (
+	"database/sql"
+)
 
-// Struct for the connection pool.
-type Database struct {
-	DB *sql.DB
-}
-
-var dbInstance *Database
-
-func DbConnection(dbFile string) error {
+func DbConnection(dbFile string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	db.SetMaxOpenConns(1) // to prevent ("database is locked").
 	db.SetMaxIdleConns(1) // to prevent ("database is locked").
 
-	dbInstance = &Database{DB: db}
+	dbScript(db)
+	return db, nil
+}
+
+// dbScript executes a SQL script to create the 'links' table if it doesn't already exist.
+// It prepares and executes the statement using the provided database connection.
+func dbScript(db *sql.DB) error {
+	sqlScript := `CREATE TABLE IF NOT EXISTS links (id INTEGER PRIMARY KEY, longlink TEXT NOT NULL, shortlink TEXT NOT NULL UNIQUE);`
+
+	statement, err := db.Prepare(sqlScript) // Prepare SQL statement
+	if err != nil {
+		return err
+	}
+	_, err = statement.Exec()
+	if err != nil {
+		return err
+	}
 	return nil
-}
-
-// GetDB returns the global database instance.
-// To Access the database connection pool everywhere.
-func GetDB() *Database {
-	return dbInstance
-}
-
-func (d *Database) CloseDB() error {
-	return d.DB.Close()
 }
 
 // FindOriginalLink looks for the original Link in the .db database.
@@ -47,8 +48,8 @@ func FindOriginalLink(db *sql.DB, shortlink string) (string, error) {
 // InstertData saves the longlink and shortlink in sql database.
 func InsertData(db *sql.DB, longlink string, shortlink string) error {
 	insertLinks := `INSERT OR IGNORE INTO links(longlink, shortlink) VALUES (?, ?);` // ignore duplicates
-	statement, err := db.Prepare(insertLinks)                                        // Prepare SQL statement
 
+	statement, err := db.Prepare(insertLinks) // Prepare SQL statement
 	if err != nil {
 		return err
 	}
