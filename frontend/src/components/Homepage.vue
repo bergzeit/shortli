@@ -74,7 +74,7 @@ function resetInputField() {
   <body>
     <div class="body-elements">
       <div class="title-text">
-        Generate a short URL!
+        Generate a short Link!
       </div>
 
       <!--POST-METHOD-->

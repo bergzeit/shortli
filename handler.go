@@ -2,15 +2,11 @@ package main
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 )
-
-type Application struct {
-	db *sql.DB
-}
 
 type PageData struct {
 	OriginalURL string `json:"originalUrl"`
@@ -19,7 +15,7 @@ type PageData struct {
 
 // urlShortHanlder checks if a short link is already existing in the database
 // and send this original link back to the client.
-func (app *Application) UrlShortHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) urlShortHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check if the request method is GET.
 	if r.Method != http.MethodGet {
@@ -31,7 +27,7 @@ func (app *Application) UrlShortHandler(w http.ResponseWriter, r *http.Request) 
 	shortUrlInput := r.FormValue("shortUrl")
 
 	if len(shortUrlInput) != 0 {
-		returnedOriginalURL, err := FindOriginalLink(app.db, shortUrlInput)
+		returnedOriginalURL, err := app.repo.FindOriginalLink(shortUrlInput)
 		if err != nil {
 			http.Error(w, "Error: can't find original link", http.StatusBadRequest)
 			return
@@ -55,7 +51,7 @@ func (app *Application) UrlShortHandler(w http.ResponseWriter, r *http.Request) 
 
 // createHanlder receives the original link (JSON) from client (POST-METHOD)
 // and create a new shortlink.
-func (app *Application) CreateHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) createHandler(w http.ResponseWriter, r *http.Request) {
 
 	// MehtodOptions must be valid (Status: OK).
 	if r.Method == http.MethodOptions {
@@ -87,7 +83,7 @@ func (app *Application) CreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shortUrl, _ := generateShortKey() // generate the short url
-	InsertData(app.db, pageData.OriginalURL, shortUrl)
+	app.repo.InsertData(pageData.OriginalURL, shortUrl)
 
 	data := PageData{
 		OriginalURL: pageData.OriginalURL,
@@ -102,6 +98,27 @@ func (app *Application) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write(jsonData)
+}
+
+// forwardingToOriginHandler handles incoming GET requests with a shortlink path,
+// looks up the corresponding original URL from the repository, and redirects the client to it.
+func (app *application) forwardingToOriginHandler(w http.ResponseWriter, r *http.Request) {
+
+	// Check if the request method is GET.
+	if r.Method != http.MethodGet {
+		http.Error(w, "Error: only GET method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pathInput := strings.TrimPrefix(r.URL.Path, "/")
+
+	returnedOriginalURL, err := app.repo.FindOriginalLink(pathInput)
+	if err != nil {
+		http.Error(w, "Error: can't find original link", http.StatusBadRequest)
+		return
+	}
+
+	http.Redirect(w, r, returnedOriginalURL, http.StatusSeeOther)
 }
 
 // generateShortKey generates and returns a random key with 7 chars.
