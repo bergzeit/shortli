@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/bergzeit/shortli/repository"
 )
 
 type PageData struct {
@@ -53,7 +55,7 @@ func (app *application) urlShortHandler(w http.ResponseWriter, r *http.Request) 
 // and create a new shortlink.
 func (app *application) createHandler(w http.ResponseWriter, r *http.Request) {
 
-	// MehtodOptions must be valid (Status: OK).
+	// MethodOptions must be valid (Status: OK).
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -68,6 +70,7 @@ func (app *application) createHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Error: while reading the file", http.StatusBadRequest)
+		return
 	}
 	defer r.Body.Close()
 
@@ -82,8 +85,29 @@ func (app *application) createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortUrl, _ := generateShortKey() // generate the short url
-	app.repo.InsertData(pageData.OriginalURL, shortUrl)
+	var shortUrl string
+	for i := 0; i < 3; i++ {
+		shortUrl, err = generateShortKey()
+		if err != nil {
+			http.Error(w, "Error: failed to generate a short link", http.StatusInternalServerError)
+			return
+		}
+
+		err = app.repo.InsertData(pageData.OriginalURL, shortUrl)
+		if err == nil {
+			break
+		}
+
+		if !repository.IsDuplicateKey(err) {
+			http.Error(w, "Error: database error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err != nil {
+		http.Error(w, "Error: failed to create unique short URL", http.StatusConflict)
+		return
+	}
 
 	data := PageData{
 		OriginalURL: pageData.OriginalURL,
@@ -110,7 +134,7 @@ func (app *application) forwardingToOriginHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	pathInput := strings.TrimPrefix(r.URL.Path, "/")
+	pathInput := trimPath(r)
 
 	returnedOriginalURL, err := app.repo.FindOriginalLink(pathInput)
 	if err != nil {
@@ -136,4 +160,9 @@ func generateShortKey() (string, error) {
 		b[i] = letters[int(b[i])%len(letters)]
 	}
 	return string(b), nil
+}
+
+func trimPath(r *http.Request) string {
+	pathInput := strings.TrimPrefix(r.URL.Path, "/")
+	return pathInput
 }

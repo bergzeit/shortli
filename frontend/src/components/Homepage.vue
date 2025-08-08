@@ -11,6 +11,8 @@ const textInputLong = ref('')
 let answer = ref('')
 let shortUrl = ref('')
 let longUrl = ref('')
+let firstPartLink = "http://localhost:8080/"
+let forwardingLink = ref('')
 
 // fetchData catches the JSON-Data from Golang.
 // input must be an existing shortlink in the db. database.
@@ -34,6 +36,7 @@ async function fetchOriginalLink() {
   if (result) {
     answer.value = result.originalUrl;  // answer is now the original link as string
     shortUrl.value = result.shortUrl;
+    forwardingLink = firstPartLink + shortUrl.value
   } else {
     answer.value = "Link existiert nicht."
     shortUrl.value = "Shortlink existiert nicht."
@@ -60,6 +63,7 @@ async function handleSubmit() {
   shortUrl.value = result.shortUrl;
   longUrl.value = data.originalUrl;
   answer.value = "";
+  forwardingLink = firstPartLink + shortUrl.value
 
   resetInputField()
 }
@@ -93,23 +97,27 @@ function resetInputField() {
         </button>
         <p v-if="longUrl">
           Originaler Link: <br><a class="generatedLinks" :href="`${longUrl}`"> {{ longUrl }}</a><br>
-          Verkürzter Link: <br><a class="generatedLinks" :href="`${longUrl}`"> {{ shortUrl }}</a><br>
+          Verkürzter Link: <br><a class="generatedLinks" :href="`${forwardingLink}`"> {{ shortUrl }}</a><br>
         </p>
       </form>
    
       <!--GET-METHOD-->
-      <input 
-        v-model="textInput" 
-        type="text" 
-        placeholder="Shortlink eingeben" 
-      />
-      <button @click="fetchOriginalLink()">
-        Originalen Link anzeigen
-      </button>
-      <p v-if="answer">
-        Originaler Link: <a class="generatedLinks" :href="`${answer}`"><br> {{ answer }} </a><br>
-        Verkürzter Link: <br><a class="generatedLinks" :href="`${answer}`"> {{ shortUrl }}</a><br>       
-      </p>
+      <form @submit.prevent="fetchOriginalLink()">
+        <input 
+          v-model="textInput" 
+          type="text" 
+          name="shortlink"
+          placeholder="Shortlink eingeben"
+          required
+        />
+        <button type="submit">
+          Originalen Link anzeigen
+        </button>
+        <p v-if="answer">
+          Originaler Link: <a class="generatedLinks" :href="`${answer}`"><br> {{ answer }} </a><br>
+          Verkürzter Link: <br><a class="generatedLinks" :href="`${forwardingLink}`"> {{ shortUrl }}</a><br>       
+        </p>
+      </form>
 
     </div>
   </body>
@@ -135,6 +143,12 @@ function resetInputField() {
     border-color: white;
     padding: 25px;
     background-color: rgba(67, 0, 65, 0.9);
+    max-width: 80vh;
+  }
+  html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
   }
   body{
     display: flex;
@@ -142,7 +156,18 @@ function resetInputField() {
     align-items: center;
     flex-direction: column;
     background-color: transparent;
-    width: 100%;
+    min-height: 100vh;
+  }
+  div#app {
+  width: 100%;
+  max-width: 800px;
+  padding: 20px;
+  box-sizing: border-box;
+  min-height: 60vh; /* oder 100vh für vollen Viewport */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   }
   input {
     height: 30px;
@@ -150,8 +175,15 @@ function resetInputField() {
   }
   .generatedLinks{
     font-weight: bold;
-    color: cornsilk
+    color: cornsilk;
   }
+  a.generatedLinks {
+  display: inline;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word; 
+}
   a,
   p {
     font-size: 30px;

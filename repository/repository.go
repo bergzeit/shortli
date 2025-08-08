@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 type Repository struct {
@@ -70,6 +71,11 @@ func (r *Repository) InsertData(longlink string, shortlink string) error {
 		return err
 	}
 	return nil
+}
+
+// IsDuplicateKey checks if the shortkey is a duplicate.
+func IsDuplicateKey(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 func (r *Repository) Close() {
