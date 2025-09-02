@@ -60,7 +60,7 @@ func (r *Repository) FindOriginalLink(shortlink string) (string, error) {
 
 // InstertData saves the longlink and shortlink in sql database.
 func (r *Repository) InsertData(longlink string, shortlink string) error {
-	insertLinks := `INSERT INTO links(longlink, shortlink) VALUES (?, ?);` // ignore duplicates
+	insertLinks := `INSERT INTO links(longlink, shortlink) VALUES (?, ?);`
 
 	statement, err := r.db.Prepare(insertLinks) // Prepare SQL statement
 	if err != nil {

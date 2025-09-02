@@ -3,8 +3,10 @@ package main
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/bergzeit/shortli/repository"
@@ -134,7 +136,13 @@ func (app *application) forwardingToOriginHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	pathInput := trimPath(r)
+	// Ignore the browser's automatic request for /favicon.ico to prevent unnecessary processing
+	// or errors in the handler logic.
+	if r.URL.Path == "/favicon.ico" {
+		http.NotFound(w, r)
+		return
+	}
+	pathInput, _ := trimPath(r.URL.Path)
 
 	returnedOriginalURL, err := app.repo.FindOriginalLink(pathInput)
 	if err != nil {
@@ -162,7 +170,18 @@ func generateShortKey() (string, error) {
 	return string(b), nil
 }
 
-func trimPath(r *http.Request) string {
-	pathInput := strings.TrimPrefix(r.URL.Path, "/")
-	return pathInput
+func trimPath(path string) (string, error) {
+	pathInput := strings.TrimPrefix(path, "/")
+	pathInput = strings.ReplaceAll(pathInput, " ", "") // remove white spaces.
+
+	if len(pathInput) != 7 {
+		return "", errors.New("must be exactly 7 chars")
+	}
+
+	validChars, _ := regexp.MatchString(`^[0-9A-Za-z]+$`, pathInput) // special chars are not valid.
+	if !validChars {
+		return "", errors.New("only regular chars are valid. (no special chars)")
+	}
+
+	return pathInput, nil
 }
