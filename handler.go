@@ -142,7 +142,12 @@ func (app *application) forwardingToOriginHandler(w http.ResponseWriter, r *http
 		http.NotFound(w, r)
 		return
 	}
-	pathInput, _ := trimPath(r.URL.Path)
+
+	pathInput, err := trimPath(r.URL.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	returnedOriginalURL, err := app.repo.FindOriginalLink(pathInput)
 	if err != nil {
@@ -180,7 +185,7 @@ func trimPath(path string) (string, error) {
 
 	validChars, _ := regexp.MatchString(`^[0-9A-Za-z]+$`, pathInput) // special chars are not valid.
 	if !validChars {
-		return "", errors.New("only regular chars are valid. (no special chars)")
+		return "", errors.New("only regular chars are valid")
 	}
 
 	return pathInput, nil
